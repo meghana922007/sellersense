@@ -1,0 +1,179 @@
+// schema.prisma
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── USER & SESSIONS ─────────────────────────────────
+
+model User {
+  id            String            @id @default(cuid())
+  email         String            @unique
+  password      String            // bcrypt hashed
+  name          String?
+  storeName     String?
+  logoUrl       String?
+  isActive      Boolean           @default(true)
+  emailReports  Boolean           @default(true)
+  reportDay     String            @default("MONDAY")
+  reportTime    String            @default("09:00")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  marketplaces  UserMarketplace[]
+  products      Product[]
+  orders        Order[]
+  inventory     Inventory[]
+  expenses      Expense[]
+  imports       ImportJob[]
+  sessions      Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserMarketplace {
+  id          String      @id @default(cuid())
+  userId      String
+  marketplace String      // "AMAZON", "FLIPKART", "MEESHO"
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, marketplace])
+}
+
+// ─── PRODUCTS ────────────────────────────────────────
+
+model Product {
+  id             String      @id @default(cuid())
+  userId         String
+  sku            String      // Master SKU
+  name           String
+  costPrice      Float?      // Unit manufacturing cost
+  sellingPrice   Float?
+  category       String?
+  currentStock   Int         @default(0)
+  marketplace    String      // "AMAZON", "FLIPKART", "MEESHO"
+  marketplaceSku String?     // Platform-specific SKU alias (if different)
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders         Order[]
+  inventory      Inventory[]
+
+  @@unique([userId, sku, marketplace])
+}
+
+// ─── ORDERS & TRANSACTIONS ──────────────────────────
+
+model Order {
+  id                 String      @id @default(cuid())
+  userId             String
+  productId          String?
+  marketplace        String      // "AMAZON", "FLIPKART", "MEESHO"
+  marketplaceOrderId String
+  orderDate          DateTime
+  status             String      // "PENDING", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"
+  sku                String
+  productName        String
+  quantity           Int
+  salePrice          Float
+  
+  // Fees consolidated from Settlement files
+  marketplaceFee     Float       @default(0)
+  fulfillmentFee     Float       @default(0)
+  otherFees          Float       @default(0)
+  totalFees          Float       @default(0)
+  
+  // Net margin columns
+  costPrice          Float?      // Snapshot of Product.costPrice at order creation
+  netRevenue         Float       @default(0) // salePrice - totalFees
+  profit             Float?                  // netRevenue - (costPrice * quantity)
+  
+  settlementDate     DateTime?
+  rawData            String?     // Serialized JSON of raw CSV row for recovery
+  createdAt          DateTime    @default(now())
+
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product            Product?    @relation(fields: [productId], references: [id])
+
+  @@index([userId, orderDate])
+  @@index([userId, marketplace])
+  @@index([userId, sku])
+  @@unique([userId, marketplace, marketplaceOrderId, sku]) // Prevents overlap duplicate items
+}
+
+// ─── INVENTORY (AMAZON FBA ONLY) ───────────────────
+
+model Inventory {
+  id                  String      @id @default(cuid())
+  userId              String
+  productId           String?
+  sku                 String
+  marketplace         String      @default("AMAZON")
+  fulfillableQuantity Int         @default(0)
+  reservedQuantity    Int         @default(0)
+  inboundQuantity     Int         @default(0)
+  totalQuantity       Int         @default(0)
+  lowStockThreshold   Int         @default(10)
+  lastUpdated         DateTime    @default(now())
+  createdAt           DateTime    @default(now())
+
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product             Product?    @relation(fields: [productId], references: [id])
+
+  @@index([userId, sku])
+}
+
+// ─── EXPENSES ────────────────────────────────────────
+
+model Expense {
+  id          String        @id @default(cuid())
+  userId      String
+  category    String        // "PACKAGING", "TRANSPORT", "ADVERTISING", "MISC"
+  amount      Float
+  description String?
+  date        DateTime
+  isRecurring Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+// ─── IMPORT JOBS ─────────────────────────────────────
+
+model ImportJob {
+  id            String      @id @default(cuid())
+  userId        String
+  marketplace   String
+  fileName      String
+  fileType      String      // "csv", "xlsx", "zip"
+  status        String      // "PENDING", "PROCESSING", "COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED"
+  totalRows     Int         @default(0)
+  processedRows Int         @default(0)
+  errorMessage  String?
+  errorRows     String?     // Serialized JSON of failed rows
+  createdAt     DateTime    @default(now())
+  completedAt   DateTime?
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

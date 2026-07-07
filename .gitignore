@@ -1,0 +1,31 @@
+# Dependency folders
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Local database file structures
+backend/dev.db
+backend/dev.db-journal
+backend/*.db
+backend/*.db-journal
+
+# Compilation and production builds
+backend/dist/
+frontend/dist/
+
+# Environmental credentials / API keys
+.env
+backend/.env
+frontend/.env
+*.local
+
+# Local uploads directories
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Sample test files folder
+sample_reports/
+
+# OS-specific files
+.DS_Store
+Thumbs.db

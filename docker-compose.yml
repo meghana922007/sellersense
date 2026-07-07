@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - DATABASE_URL=file:./dev.db
+      - JWT_SECRET=sellersense-production-secret-key-2026
+      - JWT_ACCESS_EXPIRY=15m
+      - JWT_REFRESH_EXPIRY=7d
+      - UPLOAD_DIR=./uploads
+      - SMTP_PORT=587
+      - EMAIL_FROM="SellerSense Reports <reports@sellersense.app>"
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_db:/app/prisma
+
+volumes:
+  backend_uploads:
+  backend_db:
