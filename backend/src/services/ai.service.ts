@@ -1,17 +1,17 @@
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import prisma from '../config/database';
 
-// Initialize OpenAI client if key is present
-const getOpenAIClient = (): OpenAI | null => {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key || key.startsWith('sk-your-key') || key === 'sk-...') {
+// Initialize Google Generative AI client if key is present
+const getGeminiClient = (): GoogleGenerativeAI | null => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key || key.startsWith('your-gemini-key') || key === '...') {
     return null;
   }
-  return new OpenAI({ apiKey: key });
+  return new GoogleGenerativeAI(key);
 };
 
 /**
- * Computes deterministic statistics to provide either to OpenAI
+ * Computes deterministic statistics to provide either to Gemini
  * or to use in the fallback local analytical summary.
  */
 async function fetchSellerStats(userId: string, fromDate?: string, toDate?: string) {
@@ -23,7 +23,17 @@ async function fetchSellerStats(userId: string, fromDate?: string, toDate?: stri
   }
 
   const [orders, products, expenses] = await Promise.all([
-    prisma.order.findMany({ where, select: { marketplace: true, salePrice: true, profit: true, sku: true, quantity: true, productName: true } }),
+    prisma.order.findMany({
+      where,
+      select: {
+        marketplace: true,
+        salePrice: true,
+        profit: true,
+        sku: true,
+        quantity: true,
+        productName: true,
+      },
+    }),
     prisma.product.findMany({ where: { userId }, select: { sku: true, costPrice: true, name: true } }),
     prisma.expense.findMany({ where: { userId }, select: { amount: true } }),
   ]);
@@ -82,7 +92,7 @@ async function fetchSellerStats(userId: string, fromDate?: string, toDate?: stri
  */
 export async function getDashboardInsights(userId: string): Promise<string> {
   const stats = await fetchSellerStats(userId);
-  const client = getOpenAIClient();
+  const client = getGeminiClient();
 
   if (!client) {
     // Graceful local analytical fallback
@@ -107,27 +117,23 @@ export async function getDashboardInsights(userId: string): Promise<string> {
   }
 
   try {
-    const prompt = `You are SellerSense AI, a business analyst. Summarize this performance log:
-- Total Revenue: INR ${stats.totalRevenue}
+    const prompt = `You are SellerSense AI, an automated business advisor. Analyze this store status:
+- Gross Revenue: INR ${stats.totalRevenue}
 - Net Profit: INR ${stats.totalProfit}
-- Missing Product Costs: ${stats.missingCostCount}
-- Top Products sold: ${JSON.stringify(stats.topProducts)}
-- Platform Shares: ${JSON.stringify(stats.platformBreakdown)}
+- Missing Product Cost Prices: ${stats.missingCostCount} items
+- Product sales count details: ${JSON.stringify(stats.topProducts)}
+- Marketplaces summary: ${JSON.stringify(stats.platformBreakdown)}
 
-Respond in exactly this format with 3 lines:
+Respond in exactly this format in 3 lines:
 📊 Business Health: [score 0-100] [1-sentence explanation]
-🏆 Platform Spotlight: [Highest channel and its share]
+🏆 Platform Spotlight: [Highest channel and its percentage share]
 ⚠️ Operational Warning: [Identify the most critical catalog alert or negative profit SKU]
-Keep each bullet under 15 words.`;
+Keep each line under 15 words.`;
 
-    const completion = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 150,
-      temperature: 0.3,
-    });
-
-    return completion.choices[0].message.content || 'Insights temporary unavailable.';
+    const model = client.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text().trim() || 'Insights temporary unavailable.';
   } catch (error: any) {
     return `Analysis error: ${error.message}`;
   }
@@ -142,12 +148,12 @@ export async function getDetailedInsights(
   to?: string
 ): Promise<string> {
   const stats = await fetchSellerStats(userId, from, to);
-  const client = getOpenAIClient();
+  const client = getGeminiClient();
 
   if (!client) {
     // Generate styled deterministic Markdown fallback report
     let markdown = `## 📊 SellerSense Business Analysis (Rule-Based Analytics)\n\n`;
-    markdown += `*Note: Connect a valid OpenAI API key in your \`.env\` file to receive dynamic LLM-driven suggestions.*\n\n`;
+    markdown += `*Note: Connect a valid Google Gemini API key in your \`.env\` file to receive dynamic LLM-driven suggestions.*\n\n`;
     
     markdown += `### 1. Executive Summary\n`;
     const margin = stats.totalRevenue > 0 ? (stats.totalProfit / stats.totalRevenue) * 100 : 0;
@@ -200,15 +206,11 @@ Provide:
 
 Use standard markdown formatting. Be direct, clear, and actionable.`;
 
-    const completion = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 800,
-      temperature: 0.5,
-    });
-
-    return completion.choices[0].message.content || 'Detailed analysis unavailable.';
+    const model = client.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text().trim() || 'Detailed analysis unavailable.';
   } catch (error: any) {
-    return `### Analysis Error\nFailed to call OpenAI API: ${error.message}`;
+    return `### Analysis Error\nFailed to call Google Gemini API: ${error.message}`;
   }
 }
